@@ -1,0 +1,1 @@
+camerauser ALL=(root) NOPASSWD: /bin/systemctl enable --now mediamtx, /bin/systemctl disable --now mediamtx, /usr/bin/systemctl enable --now mediamtx, /usr/bin/systemctl disable --now mediamtx

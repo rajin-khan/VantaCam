@@ -1,0 +1,19 @@
+{
+  "cleanUrls": true,
+  "functions": {
+    "api/config.js": {
+      "maxDuration": 5
+    }
+  },
+  "headers": [
+    {
+      "source": "/(.*)",
+      "headers": [
+        {
+          "key": "Cache-Control",
+          "value": "no-store"
+        }
+      ]
+    }
+  ]
+}

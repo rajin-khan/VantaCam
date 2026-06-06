@@ -1,0 +1,17 @@
+[Unit]
+Description=Private camera dashboard
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+User=camerauser
+Group=camerauser
+WorkingDirectory=/home/camerauser/camera-stream-pi/web
+EnvironmentFile=/home/camerauser/camera-stream-pi/web/.env
+ExecStart=/usr/bin/node /home/camerauser/camera-stream-pi/web/server.js
+Restart=always
+RestartSec=5
+PrivateTmp=yes
+
+[Install]
+WantedBy=multi-user.target

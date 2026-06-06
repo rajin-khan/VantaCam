@@ -1,0 +1,502 @@
+#!/usr/bin/env node
+'use strict';
+
+const crypto = require('crypto');
+const fs = require('fs');
+const http = require('http');
+const https = require('https');
+const path = require('path');
+const { spawn } = require('child_process');
+
+loadEnv(path.join(__dirname, '.env'));
+
+const config = {
+  host: process.env.HOST || '127.0.0.1',
+  port: Number(process.env.PORT || 3100),
+  streamHost: process.env.STREAM_HOST || '127.0.0.1',
+  publicStreamHost: process.env.PUBLIC_STREAM_HOST || process.env.STREAM_HOST || '127.0.0.1',
+  streamPath: process.env.STREAM_PATH || 'cam',
+  publicWebrtcUrl: process.env.PUBLIC_WEBRTC_URL || '',
+  remoteDashboardUrl: normalizeRemoteUrl(process.env.REMOTE_DASHBOARD_URL || ''),
+  appPasswordHash: requiredEnv('APP_PASSWORD_SHA256'),
+  controlPasswordHash: requiredEnv('CONTROL_PASSWORD_SHA256'),
+  sessionSecret: requiredEnv('SESSION_SECRET'),
+  cookieSecure: process.env.COOKIE_SECURE || 'auto',
+  cookieSameSite: process.env.COOKIE_SAMESITE || 'Lax',
+  corsOrigins: parseCorsOrigins(process.env.CORS_ORIGIN || ''),
+};
+
+const publicDir = path.join(__dirname, 'public');
+const sessionMaxAgeSeconds = 60 * 60 * 12;
+
+const mimeTypes = {
+  '.html': 'text/html; charset=utf-8',
+  '.css': 'text/css; charset=utf-8',
+  '.js': 'text/javascript; charset=utf-8',
+  '.json': 'application/json; charset=utf-8',
+  '.svg': 'image/svg+xml',
+  '.png': 'image/png',
+  '.jpg': 'image/jpeg',
+  '.jpeg': 'image/jpeg',
+  '.m3u8': 'application/vnd.apple.mpegurl',
+  '.mp4': 'video/mp4',
+};
+
+const server = http.createServer(async (req, res) => {
+  try {
+    if (handleCors(req, res)) return;
+
+    if (req.url === '/api/login' && req.method === 'POST') {
+      await handleLogin(req, res);
+      return;
+    }
+
+    if (req.url === '/api/logout' && req.method === 'POST') {
+      clearSession(req, res);
+      sendJson(res, 200, { ok: true });
+      return;
+    }
+
+    if (req.url === '/api/session' && req.method === 'GET') {
+      sendJson(res, 200, { authenticated: Boolean(readSession(req)) });
+      return;
+    }
+
+    if (req.url === '/api/config.js' && req.method === 'GET') {
+      sendConfigJs(res);
+      return;
+    }
+
+    if (req.url === '/api/status' && req.method === 'GET') {
+      if (requireSession(req, res)) {
+        config.remoteDashboardUrl
+          ? await forwardToRemoteDashboard(req, res, 'GET', '/api/status')
+          : await handleStatus(res);
+      }
+      return;
+    }
+
+    if (req.url === '/api/control' && req.method === 'POST') {
+      if (requireSession(req, res)) {
+        config.remoteDashboardUrl
+          ? await forwardToRemoteDashboard(req, res, 'POST', '/api/control')
+          : await handleControl(req, res);
+      }
+      return;
+    }
+
+    if (req.url.startsWith('/stream/') && req.method === 'GET') {
+      if (requireSession(req, res)) {
+        config.remoteDashboardUrl
+          ? await forwardToRemoteDashboard(req, res, 'GET', req.url)
+          : proxyHls(req, res);
+      }
+      return;
+    }
+
+    if (req.url === '/' || req.url === '/index.html') {
+      serveFile(res, path.join(publicDir, 'index.html'));
+      return;
+    }
+
+    if (req.url.startsWith('/assets/')) {
+      serveFile(res, path.join(publicDir, req.url));
+      return;
+    }
+
+    sendText(res, 404, 'Not found');
+  } catch (error) {
+    console.error(error);
+    sendJson(res, 500, { error: 'internal_error' });
+  }
+});
+
+server.listen(config.port, config.host, () => {
+  console.log(`camera dashboard listening on http://${config.host}:${config.port}`);
+});
+
+function loadEnv(filePath) {
+  if (!fs.existsSync(filePath)) return;
+  const lines = fs.readFileSync(filePath, 'utf8').split(/\r?\n/);
+  for (const line of lines) {
+    const trimmed = line.trim();
+    if (!trimmed || trimmed.startsWith('#')) continue;
+    const match = trimmed.match(/^([A-Za-z_][A-Za-z0-9_]*)=(.*)$/);
+    if (!match) continue;
+    const value = match[2].replace(/^"|"$/g, '');
+    if (process.env[match[1]] === undefined) {
+      process.env[match[1]] = value;
+    }
+  }
+}
+
+function requiredEnv(name) {
+  const value = process.env[name];
+  if (!value) {
+    console.error(`Missing required environment variable: ${name}`);
+    process.exit(1);
+  }
+  return value;
+}
+
+function normalizeRemoteUrl(value) {
+  return value ? value.replace(/\/+$/, '') : '';
+}
+
+function parseCorsOrigins(value) {
+  return value
+    .split(',')
+    .map(origin => normalizeRemoteUrl(origin.trim()))
+    .filter(Boolean);
+}
+
+async function handleLogin(req, res) {
+  const body = await readJson(req);
+  const password = String(body.password || '');
+  if (!verifyPassword(password, config.appPasswordHash)) {
+    sendJson(res, 401, { error: 'invalid_password' });
+    return;
+  }
+
+  setSession(req, res);
+  sendJson(res, 200, { ok: true });
+}
+
+async function handleStatus(res) {
+  const active = await runCommand('systemctl', ['is-active', 'mediamtx'], { allowFailure: true });
+  const enabled = await runCommand('systemctl', ['is-enabled', 'mediamtx'], { allowFailure: true });
+  const ports = await runShell("ss -lntup 2>/dev/null | grep -E '(:8888|:8889|:8189)' || true");
+
+  sendJson(res, 200, {
+    active: active.stdout.trim() || 'unknown',
+    enabled: enabled.stdout.trim() || 'unknown',
+    streamPath: config.streamPath,
+    webrtcUrl: config.publicWebrtcUrl || `http://${config.publicStreamHost}:8889/${config.streamPath}/`,
+    hlsUrl: `/stream/index.m3u8`,
+    rawHlsUrl: `http://${config.streamHost}:8888/${config.streamPath}/index.m3u8`,
+    ports: ports.stdout.trim(),
+    checkedAt: new Date().toISOString(),
+  });
+}
+
+async function handleControl(req, res) {
+  const body = await readJson(req);
+  const action = String(body.action || '');
+  const controlPassword = String(body.controlPassword || '');
+
+  if (action !== 'on' && action !== 'off') {
+    sendJson(res, 400, { error: 'invalid_action' });
+    return;
+  }
+
+  if (!verifyPassword(controlPassword, config.controlPasswordHash)) {
+    sendJson(res, 401, { error: 'invalid_control_password' });
+    return;
+  }
+
+  const systemctlArgs = action === 'on'
+    ? ['systemctl', 'enable', '--now', 'mediamtx']
+    : ['systemctl', 'disable', '--now', 'mediamtx'];
+
+  const result = await runCommand('sudo', systemctlArgs, { allowFailure: true, timeoutMs: 12000 });
+  if (result.code !== 0) {
+    sendJson(res, 500, {
+      error: 'control_failed',
+      detail: (result.stderr || result.stdout || '').trim(),
+    });
+    return;
+  }
+
+  await handleStatus(res);
+}
+
+function proxyHls(req, res) {
+  const requestUrl = new URL(req.url, 'http://camera-dashboard.local');
+  const suffix = decodeURIComponent(requestUrl.pathname.replace(/^\/stream\/?/, ''));
+  if (!suffix || suffix.includes('..') || suffix.startsWith('/')) {
+    sendText(res, 400, 'Invalid stream path');
+    return;
+  }
+
+  fetchHlsUpstream(res, `/${config.streamPath}/${suffix}${requestUrl.search}`, 0, '');
+}
+
+async function forwardToRemoteDashboard(req, res, method, remotePath) {
+  const body = method === 'POST' ? JSON.stringify(await readJson(req)) : null;
+  const remoteUrl = new URL(remotePath, config.remoteDashboardUrl);
+  const client = remoteUrl.protocol === 'https:' ? https : http;
+  const remoteReq = client.request({
+    hostname: remoteUrl.hostname,
+    port: remoteUrl.port || (remoteUrl.protocol === 'https:' ? 443 : 80),
+    path: `${remoteUrl.pathname}${remoteUrl.search}`,
+    method,
+    timeout: 12000,
+    headers: {
+      Cookie: req.headers.cookie || '',
+      ...(body ? {
+        'Content-Type': 'application/json',
+        'Content-Length': Buffer.byteLength(body),
+      } : {}),
+    },
+  }, remoteRes => {
+    res.writeHead(remoteRes.statusCode || 502, {
+      'Content-Type': remoteRes.headers['content-type'] || 'application/octet-stream',
+      'Cache-Control': 'no-store',
+    });
+    remoteRes.pipe(res);
+  });
+
+  remoteReq.on('timeout', () => {
+    remoteReq.destroy();
+    sendText(res, 504, 'Remote dashboard timed out');
+  });
+
+  remoteReq.on('error', () => {
+    if (!res.headersSent) sendText(res, 502, 'Remote dashboard unavailable');
+  });
+
+  if (body) remoteReq.write(body);
+  remoteReq.end();
+}
+
+function fetchHlsUpstream(res, upstreamPath, redirectCount, cookieHeader) {
+  const upstream = http.request({
+    hostname: config.streamHost,
+    port: 8888,
+    path: upstreamPath,
+    method: 'GET',
+    timeout: 12000,
+    headers: cookieHeader ? { Cookie: cookieHeader } : {},
+  }, upstreamRes => {
+    if (upstreamRes.statusCode >= 300 && upstreamRes.statusCode < 400 && upstreamRes.headers.location) {
+      if (redirectCount >= 3) {
+        sendText(res, 502, 'Too many stream redirects');
+        upstreamRes.resume();
+        return;
+      }
+
+      const location = new URL(upstreamRes.headers.location, `http://${config.streamHost}:8888`);
+      if (!location.pathname.startsWith(`/${config.streamPath}/`)) {
+        sendText(res, 502, 'Invalid stream redirect');
+        upstreamRes.resume();
+        return;
+      }
+
+      const cookie = normalizeSetCookie(upstreamRes.headers['set-cookie']);
+      upstreamRes.resume();
+      fetchHlsUpstream(res, `${location.pathname}${location.search}`, redirectCount + 1, cookie || cookieHeader);
+      return;
+    }
+
+    res.writeHead(upstreamRes.statusCode || 502, {
+      'Content-Type': upstreamRes.headers['content-type'] || mimeTypes[path.extname(new URL(upstreamPath, 'http://stream.local').pathname)] || 'application/octet-stream',
+      'Cache-Control': 'no-store',
+    });
+    upstreamRes.pipe(res);
+  });
+
+  upstream.on('timeout', () => {
+    upstream.destroy();
+    sendText(res, 504, 'Stream timed out');
+  });
+
+  upstream.on('error', () => {
+    if (!res.headersSent) sendText(res, 502, 'Stream unavailable');
+  });
+
+  upstream.end();
+}
+
+function normalizeSetCookie(setCookie) {
+  if (!setCookie) return '';
+  const values = Array.isArray(setCookie) ? setCookie : [setCookie];
+  return values
+    .map(value => value.split(';')[0])
+    .filter(Boolean)
+    .join('; ');
+}
+
+function setSession(req, res) {
+  const payload = Buffer.from(JSON.stringify({
+    exp: Math.floor(Date.now() / 1000) + sessionMaxAgeSeconds,
+    nonce: crypto.randomBytes(16).toString('hex'),
+  })).toString('base64url');
+  const signature = sign(payload);
+  const secure = shouldUseSecureCookie(req) ? '; Secure' : '';
+  res.setHeader('Set-Cookie', `camera_session=${payload}.${signature}; HttpOnly; SameSite=${config.cookieSameSite}${secure}; Path=/; Max-Age=${sessionMaxAgeSeconds}`);
+}
+
+function clearSession(req, res) {
+  const secure = shouldUseSecureCookie(req) ? '; Secure' : '';
+  res.setHeader('Set-Cookie', `camera_session=; HttpOnly; SameSite=${config.cookieSameSite}${secure}; Path=/; Max-Age=0`);
+}
+
+function readSession(req) {
+  const cookies = parseCookies(req.headers.cookie || '');
+  const token = cookies.camera_session;
+  if (!token) return null;
+
+  const [payload, signature] = token.split('.');
+  if (!payload || !signature || !safeEqual(signature, sign(payload))) return null;
+
+  try {
+    const parsed = JSON.parse(Buffer.from(payload, 'base64url').toString('utf8'));
+    if (!parsed.exp || parsed.exp < Math.floor(Date.now() / 1000)) return null;
+    return parsed;
+  } catch {
+    return null;
+  }
+}
+
+function requireSession(req, res) {
+  if (readSession(req)) return true;
+  sendJson(res, 401, { error: 'unauthorized' });
+  return false;
+}
+
+function sign(payload) {
+  return crypto.createHmac('sha256', config.sessionSecret).update(payload).digest('base64url');
+}
+
+function verifyPassword(password, expectedHash) {
+  const actual = crypto.createHash('sha256').update(password).digest('hex');
+  return safeEqual(actual, expectedHash);
+}
+
+function safeEqual(a, b) {
+  const left = Buffer.from(String(a));
+  const right = Buffer.from(String(b));
+  return left.length === right.length && crypto.timingSafeEqual(left, right);
+}
+
+function parseCookies(header) {
+  const cookies = {};
+  for (const part of header.split(';')) {
+    const index = part.indexOf('=');
+    if (index === -1) continue;
+    cookies[part.slice(0, index).trim()] = decodeURIComponent(part.slice(index + 1).trim());
+  }
+  return cookies;
+}
+
+function shouldUseSecureCookie(req) {
+  if (config.cookieSecure === 'true') return true;
+  if (config.cookieSecure === 'false') return false;
+  return req.headers['x-forwarded-proto'] === 'https';
+}
+
+function handleCors(req, res) {
+  const origin = req.headers.origin || '';
+  const allowed = config.corsOrigins.includes(origin);
+  if (allowed) {
+    res.setHeader('Access-Control-Allow-Origin', origin);
+    res.setHeader('Access-Control-Allow-Credentials', 'true');
+    res.setHeader('Vary', 'Origin');
+  }
+
+  if (req.method !== 'OPTIONS') return false;
+
+  if (!allowed) {
+    sendText(res, 403, 'CORS origin not allowed');
+    return true;
+  }
+
+  res.writeHead(204, {
+    'Access-Control-Allow-Origin': origin,
+    'Access-Control-Allow-Credentials': 'true',
+    'Access-Control-Allow-Methods': 'GET,POST,OPTIONS',
+    'Access-Control-Allow-Headers': 'Content-Type',
+    'Access-Control-Max-Age': '600',
+    'Vary': 'Origin',
+  });
+  res.end();
+  return true;
+}
+
+function readJson(req) {
+  return new Promise((resolve, reject) => {
+    let body = '';
+    req.on('data', chunk => {
+      body += chunk;
+      if (body.length > 4096) {
+        req.destroy();
+        reject(new Error('request body too large'));
+      }
+    });
+    req.on('end', () => {
+      try {
+        resolve(body ? JSON.parse(body) : {});
+      } catch (error) {
+        reject(error);
+      }
+    });
+  });
+}
+
+function sendJson(res, status, data) {
+  res.writeHead(status, {
+    'Content-Type': 'application/json; charset=utf-8',
+    'Cache-Control': 'no-store',
+  });
+  res.end(JSON.stringify(data));
+}
+
+function sendText(res, status, text) {
+  res.writeHead(status, {
+    'Content-Type': 'text/plain; charset=utf-8',
+    'Cache-Control': 'no-store',
+  });
+  res.end(text);
+}
+
+function sendConfigJs(res) {
+  const apiBase = process.env.PUBLIC_DASHBOARD_API_BASE || '';
+  res.writeHead(200, {
+    'Content-Type': 'text/javascript; charset=utf-8',
+    'Cache-Control': 'no-store',
+  });
+  res.end(`window.CAMERA_CONFIG = ${JSON.stringify({ apiBase })};\n`);
+}
+
+function serveFile(res, filePath) {
+  const resolved = path.resolve(filePath);
+  if (!resolved.startsWith(publicDir)) {
+    sendText(res, 403, 'Forbidden');
+    return;
+  }
+
+  fs.readFile(resolved, (error, data) => {
+    if (error) {
+      sendText(res, 404, 'Not found');
+      return;
+    }
+    res.writeHead(200, {
+      'Content-Type': mimeTypes[path.extname(resolved)] || 'application/octet-stream',
+      'Cache-Control': 'no-store',
+    });
+    res.end(data);
+  });
+}
+
+function runCommand(command, args, options = {}) {
+  return new Promise(resolve => {
+    const child = spawn(command, args, {
+      stdio: ['ignore', 'pipe', 'pipe'],
+      timeout: options.timeoutMs || 5000,
+    });
+    let stdout = '';
+    let stderr = '';
+    child.stdout.on('data', chunk => { stdout += chunk; });
+    child.stderr.on('data', chunk => { stderr += chunk; });
+    child.on('error', error => {
+      resolve({ code: 127, stdout, stderr: error.message });
+    });
+    child.on('close', code => {
+      resolve({ code, stdout, stderr });
+    });
+  });
+}
+
+function runShell(script) {
+  return runCommand('sh', ['-c', script], { allowFailure: true });
+}

@@ -1,0 +1,46 @@
+# Secrets and machine-local config
+.env
+.env.*
+!.env.example
+!web/.env.example
+!web/env/*.example
+camera.env
+CAMERA-RUNBOOK.md
+pi/live/*
+web/systemd/*.live.service
+web/public/assets/config.local.js
+vercel-site/assets/config.js
+
+# Runtime output and diagnostics
+*.log
+*.pid
+*.sock
+*.tmp
+tmp/
+logs/
+diagnostics/
+
+# Node / package managers
+node_modules/
+.pnpm-store/
+npm-debug.log*
+pnpm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Build artifacts
+.next/
+out/
+dist/
+build/
+coverage/
+.vercel/
+
+# OS/editor noise
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+
+# Local media captures
+captures/

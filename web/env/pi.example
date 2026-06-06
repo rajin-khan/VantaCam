@@ -1,0 +1,17 @@
+# Direct tailnet-only mode can use HOST=100.x.y.z.
+# Vercel/Tailscale Serve mode should use HOST=127.0.0.1 and publish it with
+# `sudo ./enable-tailscale-serve.sh`.
+HOST=127.0.0.1
+PORT=3100
+STREAM_HOST=127.0.0.1
+PUBLIC_STREAM_HOST=100.x.y.z
+STREAM_PATH=cam-your-private-path
+PUBLIC_WEBRTC_URL=https://raspberrypi.your-tailnet.ts.net:8443/cam-your-private-path/
+REMOTE_DASHBOARD_URL=
+CORS_ORIGIN=https://your-vercel-app.vercel.app
+PUBLIC_DASHBOARD_API_BASE=
+APP_PASSWORD_SHA256=replace-with-sha256
+CONTROL_PASSWORD_SHA256=replace-with-sha256
+SESSION_SECRET=replace-with-random-hex-32-plus-bytes
+COOKIE_SECURE=true
+COOKIE_SAMESITE=None

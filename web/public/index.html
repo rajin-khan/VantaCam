@@ -1,0 +1,173 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="color-scheme" content="dark">
+    <title>VantaCam</title>
+    <link rel="stylesheet" href="/assets/styles.css">
+  </head>
+  <body>
+    <svg class="icon-sprite" aria-hidden="true">
+      <symbol id="icon-camera" viewBox="0 0 24 24">
+        <path d="M4.75 7.75A2.75 2.75 0 0 1 7.5 5h5A2.75 2.75 0 0 1 15.25 7.75v.5l4.5-2.25v8l-4.5-2.25v.5A2.75 2.75 0 0 1 12.5 15h-5a2.75 2.75 0 0 1-2.75-2.75v-4.5Z"/>
+      </symbol>
+      <symbol id="icon-power" viewBox="0 0 24 24">
+        <path d="M12 3.75v7.5"/>
+        <path d="M7.2 6.65a7.25 7.25 0 1 0 9.6 0"/>
+      </symbol>
+      <symbol id="icon-refresh" viewBox="0 0 24 24">
+        <path d="M19.25 12a7.25 7.25 0 0 1-12.74 4.7"/>
+        <path d="M4.75 12A7.25 7.25 0 0 1 17.5 7.3"/>
+        <path d="M17.5 3.75v3.5h-3.5"/>
+        <path d="M6.5 20.25v-3.5h3.5"/>
+      </symbol>
+      <symbol id="icon-lock" viewBox="0 0 24 24">
+        <path d="M7.25 10.25h9.5v8.5h-9.5z"/>
+        <path d="M9 10.25V8a3 3 0 1 1 6 0v2.25"/>
+      </symbol>
+      <symbol id="icon-external" viewBox="0 0 24 24">
+        <path d="M8.25 5.75h10v10"/>
+        <path d="M18.25 5.75 6.75 17.25"/>
+        <path d="M17.5 18.25H5.75V6.5"/>
+      </symbol>
+      <symbol id="icon-copy" viewBox="0 0 24 24">
+        <path d="M8.25 8.25h10v10h-10z"/>
+        <path d="M5.75 14.75v-9h9"/>
+      </symbol>
+      <symbol id="icon-shield" viewBox="0 0 24 24">
+        <path d="M12 3.75 18.25 6v4.8c0 4.2-2.55 7.1-6.25 8.45-3.7-1.35-6.25-4.25-6.25-8.45V6L12 3.75Z"/>
+      </symbol>
+    </svg>
+
+    <main class="app-shell">
+      <section class="login-view" id="login-panel">
+        <div class="login-card">
+          <div class="brand-lockup">
+            <img class="brand-mark" src="/assets/vantacam-mark.png" alt="VantaCam">
+            <div>
+              <p class="brand-name">VantaCam</p>
+              <p class="kicker">Private feed console</p>
+            </div>
+          </div>
+          <h1>Private feed control</h1>
+          <p class="muted">A quiet owner console for one Raspberry Pi camera path.</p>
+
+          <form id="login-form" class="stack-form">
+            <label for="password">Dashboard password</label>
+            <input id="password" name="password" type="password" autocomplete="current-password" required>
+            <button class="btn btn-primary" type="submit">
+              <span>Unlock</span>
+              <svg><use href="#icon-lock"></use></svg>
+            </button>
+            <p class="form-status" id="login-status"></p>
+          </form>
+        </div>
+      </section>
+
+      <section class="console-view is-hidden" id="console">
+        <header class="masthead">
+          <div class="masthead-copy brand-lockup">
+            <img class="brand-mark masthead-logo" src="/assets/vantacam-mark.png" alt="VantaCam">
+            <div>
+              <p class="kicker">Raspberry Pi / Tailnet</p>
+              <h1>VantaCam</h1>
+            </div>
+          </div>
+          <div class="toolbar">
+            <button class="btn btn-quiet" id="refresh-button" type="button">
+              <svg><use href="#icon-refresh"></use></svg>
+              <span>Refresh</span>
+            </button>
+            <button class="btn btn-quiet" id="logout-button" type="button">
+              <svg><use href="#icon-lock"></use></svg>
+              <span>Lock</span>
+            </button>
+          </div>
+        </header>
+
+        <section class="workspace-grid">
+          <section class="viewer-shell">
+            <div class="viewer-rail">
+              <div class="status-chip" id="status-pill">
+                <span class="status-light"></span>
+                <span id="status-label">Checking</span>
+              </div>
+              <a class="btn btn-glass" id="webrtc-link" href="#" target="_blank" rel="noreferrer">
+                <span>Open stream</span>
+                <svg><use href="#icon-external"></use></svg>
+              </a>
+            </div>
+            <iframe id="stream-frame" title="Live WebRTC camera stream" referrerpolicy="no-referrer"></iframe>
+            <div class="viewer-empty" id="viewer-empty">
+              <svg><use href="#icon-power"></use></svg>
+              <p>Signal standing by</p>
+              <span>The camera path is powered down until you open it.</span>
+            </div>
+          </section>
+
+          <aside class="control-rail">
+            <article class="panel command-panel">
+              <div class="panel-heading">
+                <p class="kicker">Stream control</p>
+                <h2>Camera path</h2>
+              </div>
+              <form id="control-form" class="stack-form">
+                <label for="control-password">Control password</label>
+                <input id="control-password" name="control-password" type="password" autocomplete="off" required>
+                <div class="command-row">
+                  <button class="btn btn-primary" id="on-button" type="button">
+                    <span>Turn On</span>
+                    <svg><use href="#icon-power"></use></svg>
+                  </button>
+                  <button class="btn btn-danger" id="off-button" type="button">
+                    <span>Turn Off</span>
+                    <svg><use href="#icon-power"></use></svg>
+                  </button>
+                </div>
+              </form>
+              <p class="form-status" id="control-status"></p>
+            </article>
+
+            <article class="panel state-panel">
+              <p class="kicker">Current state</p>
+              <dl class="metrics">
+                <div>
+                  <dt>Service</dt>
+                  <dd id="metric-active">--</dd>
+                </div>
+                <div>
+                  <dt>Boot</dt>
+                  <dd id="metric-enabled">--</dd>
+                </div>
+                <div>
+                  <dt>Checked</dt>
+                  <dd id="metric-checked">--</dd>
+                </div>
+              </dl>
+            </article>
+
+            <article class="panel path-panel">
+              <div>
+                <p class="kicker">Private path</p>
+                <code id="stream-path">--</code>
+              </div>
+              <button class="btn btn-quiet full" id="copy-url-button" type="button">
+                <svg><use href="#icon-copy"></use></svg>
+                <span>Copy URL</span>
+              </button>
+            </article>
+
+            <section class="security-strip">
+              <svg><use href="#icon-shield"></use></svg>
+              <span>Tailnet-only. Separate password gates stream power.</span>
+            </section>
+          </aside>
+        </section>
+      </section>
+    </main>
+
+    <script src="/api/config.js"></script>
+    <script src="/assets/app.js"></script>
+  </body>
+</html>
