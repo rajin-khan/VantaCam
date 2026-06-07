@@ -112,6 +112,7 @@ async function loginCamera(camera, password) {
   state.set(camera.id, {
     ...(state.get(camera.id) || {}),
     authenticated: Boolean(result.ok),
+    sessionToken: result.sessionToken || '',
     reachable: !result.error,
     lastError: result.error || '',
   });
@@ -262,11 +263,16 @@ function closeFullscreen() {
 }
 
 async function cameraApi(camera, path, options = {}) {
+  const cameraState = state.get(camera.id) || {};
   const init = {
     method: options.method || 'GET',
     credentials: 'include',
     headers: {},
   };
+
+  if (cameraState.sessionToken && path !== '/api/login') {
+    init.headers.Authorization = `Bearer ${cameraState.sessionToken}`;
+  }
 
   if (options.body) {
     init.headers['Content-Type'] = 'application/json';

@@ -141,6 +141,45 @@ Turn it on:
 
 The command asks for the stream control password.
 
+## Stream Pane Shows 502
+
+Symptom:
+
+```text
+Failed to load resource: the server responded with a status of 502
+```
+
+If this happens on the WebRTC URL, Tailscale Serve is reachable but the service
+behind it is not. On the Pi, compare the Serve target with the MediaMTX WebRTC
+listener:
+
+```bash
+sudo systemctl status mediamtx --no-pager
+grep -nE 'webrtcAddress|webrtcLocal|webrtcAdditionalHosts' /etc/mediamtx/mediamtx.yml
+tailscale serve status
+```
+
+Then test the MediaMTX page directly:
+
+```bash
+curl -i http://127.0.0.1:8889/YOUR_STREAM_PATH/
+curl -i http://YOUR_TAILSCALE_IP:8889/YOUR_STREAM_PATH/
+```
+
+If MediaMTX is bound to the Tailscale IP instead of `127.0.0.1`, the Serve
+target for port `8443` must point at that Tailscale IP:
+
+```bash
+sudo tailscale serve --https=8443 off
+sudo tailscale serve --bg --https=8443 http://YOUR_TAILSCALE_IP:8889
+```
+
+The helper script also handles this automatically:
+
+```bash
+sudo ./pi/enable-tailscale-serve.sh
+```
+
 ## Dashboard Does Not Load
 
 Check the dashboard service:
@@ -198,6 +237,37 @@ For local preview, use:
 cd vercel-site
 PI_API_BASE=http://127.0.0.1:3100 node local-preview.js
 ```
+
+## Phone Login Loops Or Shows Unreachable
+
+Symptom:
+
+```text
+The Vercel dashboard loads on a phone, but the Pi card says unreachable,
+locked, or asks you to log in again after a successful login.
+```
+
+First check that the phone itself can reach the Pi over Tailscale. On the
+phone, while Tailscale is connected, open:
+
+```text
+https://YOUR_PI_TAILSCALE_HOSTNAME.ts.net/api/session
+```
+
+Expected result:
+
+```json
+{"authenticated":false}
+```
+
+That means the phone can reach the Pi API. If it cannot load, check the
+Tailscale app on the phone, make sure it is connected, and make sure Tailscale
+DNS/MagicDNS is enabled for the device.
+
+If the direct Pi URL works but the Vercel dashboard still loops, redeploy the
+latest `fleet-site` code. The fleet dashboard uses a signed bearer session
+fallback so iOS browsers do not have to preserve third-party cookies from the
+Pi domain.
 
 Then open:
 

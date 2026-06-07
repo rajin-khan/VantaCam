@@ -158,8 +158,8 @@ async function handleLogin(req, res) {
     return;
   }
 
-  setSession(req, res);
-  sendJson(res, 200, { ok: true });
+  const sessionToken = setSession(req, res);
+  sendJson(res, 200, { ok: true, sessionToken, expiresIn: sessionMaxAgeSeconds });
 }
 
 async function handleStatus(res) {
@@ -322,8 +322,10 @@ function setSession(req, res) {
     nonce: crypto.randomBytes(16).toString('hex'),
   })).toString('base64url');
   const signature = sign(payload);
+  const token = `${payload}.${signature}`;
   const secure = shouldUseSecureCookie(req) ? '; Secure' : '';
-  res.setHeader('Set-Cookie', `camera_session=${payload}.${signature}; HttpOnly; SameSite=${config.cookieSameSite}${secure}; Path=/; Max-Age=${sessionMaxAgeSeconds}`);
+  res.setHeader('Set-Cookie', `camera_session=${token}; HttpOnly; SameSite=${config.cookieSameSite}${secure}; Path=/; Max-Age=${sessionMaxAgeSeconds}`);
+  return token;
 }
 
 function clearSession(req, res) {
@@ -333,7 +335,7 @@ function clearSession(req, res) {
 
 function readSession(req) {
   const cookies = parseCookies(req.headers.cookie || '');
-  const token = cookies.camera_session;
+  const token = cookies.camera_session || readBearerToken(req);
   if (!token) return null;
 
   const [payload, signature] = token.split('.');
@@ -346,6 +348,12 @@ function readSession(req) {
   } catch {
     return null;
   }
+}
+
+function readBearerToken(req) {
+  const value = String(req.headers.authorization || '');
+  const match = value.match(/^Bearer\s+(.+)$/i);
+  return match ? match[1].trim() : '';
 }
 
 function requireSession(req, res) {
@@ -405,7 +413,7 @@ function handleCors(req, res) {
     'Access-Control-Allow-Origin': origin,
     'Access-Control-Allow-Credentials': 'true',
     'Access-Control-Allow-Methods': 'GET,POST,OPTIONS',
-    'Access-Control-Allow-Headers': 'Content-Type',
+    'Access-Control-Allow-Headers': 'Content-Type, Authorization',
     'Access-Control-Max-Age': '600',
     'Vary': 'Origin',
   });

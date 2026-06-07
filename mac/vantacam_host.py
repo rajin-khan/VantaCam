@@ -241,7 +241,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
             return
         self.send_response(204)
         self.send_common_headers()
-        self.send_header("Access-Control-Allow-Headers", "Content-Type")
+        self.send_header("Access-Control-Allow-Headers", "Content-Type, Authorization")
         self.send_header("Access-Control-Allow-Methods", "GET,POST,OPTIONS")
         self.send_header("Access-Control-Max-Age", "600")
         self.end_headers()
@@ -271,8 +271,9 @@ class Handler(http.server.BaseHTTPRequestHandler):
         if path == "/api/login":
             body = self.read_json()
             if verify_password(str(body.get("password", "")), APP_PASSWORD_SHA256):
+                session_token = make_session()
                 cookie = http.cookies.SimpleCookie()
-                cookie["camera_session"] = make_session()
+                cookie["camera_session"] = session_token
                 cookie["camera_session"]["path"] = "/"
                 cookie["camera_session"]["max-age"] = str(SESSION_MAX_AGE_SECONDS)
                 cookie["camera_session"]["samesite"] = COOKIE_SAMESITE
@@ -284,7 +285,11 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 self.send_common_headers()
                 self.send_header("Set-Cookie", cookie.output(header="").strip())
                 self.end_headers()
-                self.wfile.write(json.dumps({"ok": True}).encode())
+                self.wfile.write(json.dumps({
+                    "ok": True,
+                    "sessionToken": session_token,
+                    "expiresIn": SESSION_MAX_AGE_SECONDS,
+                }).encode())
             else:
                 self.send_json(401, {"error": "invalid_password"})
             return
@@ -330,9 +335,14 @@ class Handler(http.server.BaseHTTPRequestHandler):
     def read_session(self):
         cookie = http.cookies.SimpleCookie(self.headers.get("Cookie", ""))
         morsel = cookie.get("camera_session")
-        if not morsel:
+        token = morsel.value if morsel else self.read_bearer_token()
+        return token if token and verify_session(token) else None
+
+    def read_bearer_token(self):
+        authorization = self.headers.get("Authorization", "")
+        if not authorization.lower().startswith("bearer "):
             return None
-        return morsel.value if verify_session(morsel.value) else None
+        return authorization[7:].strip()
 
     def require_session(self):
         if self.read_session():
