@@ -2,7 +2,6 @@
 
 This is the multi-camera Vercel dashboard.
 
-It is separate from `vercel-site/`, which remains the single-camera dashboard.
 Use this folder when you want one phone-friendly page that can show multiple
 tailnet camera hosts.
 

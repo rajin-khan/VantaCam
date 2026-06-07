@@ -229,13 +229,15 @@ Check:
 - You are using the dashboard password, not the stream control password.
 - `APP_PASSWORD_SHA256` in `web/.env` matches the password you expect.
 - The browser is reaching the same backend you configured.
-- If using Vercel, `PI_API_BASE` points to the Pi Tailscale Serve URL.
+- If using Vercel, `FLEET_CAMERAS_JSON` points to the correct private Tailscale
+  Serve URLs for each camera host.
 
 For local preview, use:
 
 ```bash
-cd vercel-site
-PI_API_BASE=http://127.0.0.1:3100 node local-preview.js
+cd fleet-site
+node verify-config.js
+node local-preview.js
 ```
 
 ## Phone Login Loops Or Shows Unreachable
@@ -336,15 +338,15 @@ Common causes:
 - MediaMTX is listening on a different host than the URL you are testing.
 - Tailscale Serve is not configured for the hosted HTTPS mode.
 
-## Vercel Page Loads But Cannot Reach The Pi
+## Vercel Page Loads But Cannot Reach A Camera
 
 Check the Vercel environment variable:
 
 ```text
-PI_API_BASE=https://raspberrypi.your-tailnet.ts.net
+FLEET_CAMERAS_JSON=[{"apiBase":"https://raspberrypi.your-tailnet.ts.net","streamUrl":"https://raspberrypi.your-tailnet.ts.net:8443/cam-your-private-path/"}]
 ```
 
-Check the Pi `web/.env` CORS value:
+Check each camera host CORS value:
 
 ```text
 CORS_ORIGIN=https://your-vercel-app.vercel.app

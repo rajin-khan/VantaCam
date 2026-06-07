@@ -10,7 +10,6 @@ CAMERA-RUNBOOK.md
 pi/live/*
 web/systemd/*.live.service
 web/public/assets/config.local.js
-vercel-site/assets/config.js
 fleet-site/cameras.local.json
 
 # Runtime output and diagnostics

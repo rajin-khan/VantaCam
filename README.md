@@ -102,13 +102,14 @@ pi/enable-tailscale-serve.sh
 ### Vercel hosts the dashboard shell
 
 The Vercel app is intentionally boring from a security perspective. It is static
-HTML, CSS, and JavaScript. It asks the Pi backend where the stream is and sends
-login/control requests to the Pi.
+HTML, CSS, and JavaScript. It loads your configured Pi and Mac camera hosts,
+then sends login/control requests directly to those private tailnet hosts from
+your browser.
 
 Relevant folder:
 
 ```text
-vercel-site/
+fleet-site/
 ```
 
 ### The dashboard has two passwords
@@ -179,16 +180,6 @@ before they can power the camera stream.
 │   └── systemd/
 │       Systemd service and sudoers templates for the Pi dashboard.
 │
-├── vercel-site/
-│   ├── index.html
-│   │   Static dashboard page deployed to Vercel.
-│   ├── api/config.js
-│   │   Small Vercel function that exposes PI_API_BASE to the browser.
-│   ├── local-preview.js
-│   │   Local Vercel-style preview server.
-│   └── assets/
-│       Dashboard CSS, JavaScript, and logo assets.
-│
 ├── camera.env.example
 ├── web/.env.example
 └── README.md
@@ -202,11 +193,11 @@ The frontend lives in two places:
 
 ```text
 web/public/
-vercel-site/
+fleet-site/
 ```
 
-The files are intentionally similar. `web/public/` is what the Pi backend can
-serve directly. `vercel-site/` is the copy meant for Vercel.
+`web/public/` is the single-host dashboard served directly by a camera backend.
+`fleet-site/` is the Vercel dashboard for the Pi + Mac fleet.
 
 The backend is:
 
@@ -301,27 +292,23 @@ http://127.0.0.1:3100/
 
 This serves the dashboard directly from `web/public/`.
 
-## Local Vercel-Style Preview
+## Local Fleet Preview
 
 Use this when you want to test the same frontend shape that Vercel will serve.
 
-Terminal 1:
+Create an ignored local camera config, then start the preview:
 
 ```bash
-node web/server.js
-```
-
-Terminal 2:
-
-```bash
-cd vercel-site
-PI_API_BASE=http://127.0.0.1:3100 node local-preview.js
+cp fleet-site/cameras.example.json fleet-site/cameras.local.json
+cd fleet-site
+node verify-config.js
+node local-preview.js
 ```
 
 Open:
 
 ```text
-http://127.0.0.1:3000/
+http://127.0.0.1:3300/
 ```
 
 What this does:
@@ -602,28 +589,6 @@ https://macbook.your-tailnet.ts.net:9444
 For fleet config, use port `9443` as the Mac `apiBase` and port `9444` for the
 Mac `streamUrl`.
 
-## Single-Camera Vercel Deployment
-
-Use this only when you want the older single-Pi dashboard.
-
-Create a Vercel project with this root directory:
-
-```text
-vercel-site
-```
-
-Set this Vercel environment variable:
-
-```text
-PI_API_BASE=https://raspberrypi.your-tailnet.ts.net
-```
-
-What this means:
-
-- Vercel serves the static dashboard.
-- The browser uses `PI_API_BASE` to find the private Pi API.
-- Passwords and stream secrets do not belong in Vercel.
-
 ## Fleet Dashboard Deployment
 
 Use this when you want one Vercel page that shows multiple cameras, such as the
@@ -757,7 +722,8 @@ web/env/*.example
 bin/
 pi/
 web/
-vercel-site/
+mac/
+fleet-site/
 ```
 
 If any of these appear in the dry run, stop and fix `.gitignore`:
@@ -777,16 +743,17 @@ Start here:
 
 1. Read `web/server.js` to understand auth, status checks, control commands,
    CORS, cookies, and stream proxying.
-2. Read `web/public/assets/app.js` to see how the browser logs in, refreshes
-   status, turns the stream on/off, and renders the iframe.
-3. Read `web/public/index.html` and `web/public/assets/styles.css` to understand
-   the dashboard UI.
-4. Read `vercel-site/local-preview.js` to understand the local Vercel-style
-   proxy.
-5. Read `vercel-site/api/config.js` to understand how Vercel passes the Pi API
-   URL to the browser.
-6. Read `bin/camctl.sh` to understand command-line stream control.
-7. Read `pi/install-pi.sh`, `pi/diagnose-pi.sh`, `pi/health-check.sh`, and
+2. Read `fleet-site/assets/app.js` to see how the Vercel dashboard logs into
+   each camera host, refreshes status, turns streams on/off, and renders the
+   iframes.
+3. Read `fleet-site/index.html` and `fleet-site/assets/styles.css` to
+   understand the production phone dashboard UI.
+4. Read `fleet-site/local-preview.js` to understand the local preview proxy.
+5. Read `fleet-site/api/config.js` to understand how Vercel exposes camera host
+   config from `FLEET_CAMERAS_JSON`.
+6. Read `mac/vantacam_host.py` to understand the Mac camera host API.
+7. Read `bin/camctl.sh` to understand command-line stream control.
+8. Read `pi/install-pi.sh`, `pi/diagnose-pi.sh`, `pi/health-check.sh`, and
    `pi/enable-tailscale-serve.sh` to understand the Pi setup and recovery tools.
 
 That order follows the normal request path: browser UI, backend API, stream
