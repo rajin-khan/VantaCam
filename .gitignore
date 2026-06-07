@@ -4,18 +4,22 @@
 !.env.example
 !web/.env.example
 !web/env/*.example
+!fleet-site/.env.example
 camera.env
 CAMERA-RUNBOOK.md
 pi/live/*
 web/systemd/*.live.service
 web/public/assets/config.local.js
 vercel-site/assets/config.js
+fleet-site/cameras.local.json
 
 # Runtime output and diagnostics
 *.log
 *.pid
 *.sock
 *.tmp
+*.py[cod]
+__pycache__/
 tmp/
 logs/
 diagnostics/

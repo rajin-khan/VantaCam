@@ -1,0 +1,210 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="color-scheme" content="dark">
+    <title>VantaCam Fleet</title>
+    <link rel="stylesheet" href="/assets/styles.css">
+  </head>
+  <body>
+    <svg class="icon-sprite" aria-hidden="true">
+      <symbol id="icon-camera" viewBox="0 0 24 24">
+        <path d="M4.75 7.75A2.75 2.75 0 0 1 7.5 5h5A2.75 2.75 0 0 1 15.25 7.75v.5l4.5-2.25v8l-4.5-2.25v.5A2.75 2.75 0 0 1 12.5 15h-5a2.75 2.75 0 0 1-2.75-2.75v-4.5Z"/>
+      </symbol>
+      <symbol id="icon-power" viewBox="0 0 24 24">
+        <path d="M12 3.75v7.5"/>
+        <path d="M7.2 6.65a7.25 7.25 0 1 0 9.6 0"/>
+      </symbol>
+      <symbol id="icon-refresh" viewBox="0 0 24 24">
+        <path d="M19.25 12a7.25 7.25 0 0 1-12.74 4.7"/>
+        <path d="M4.75 12A7.25 7.25 0 0 1 17.5 7.3"/>
+        <path d="M17.5 3.75v3.5h-3.5"/>
+        <path d="M6.5 20.25v-3.5h3.5"/>
+      </symbol>
+      <symbol id="icon-lock" viewBox="0 0 24 24">
+        <path d="M7.25 10.25h9.5v8.5h-9.5z"/>
+        <path d="M9 10.25V8a3 3 0 1 1 6 0v2.25"/>
+      </symbol>
+      <symbol id="icon-external" viewBox="0 0 24 24">
+        <path d="M8.25 5.75h10v10"/>
+        <path d="M18.25 5.75 6.75 17.25"/>
+        <path d="M17.5 18.25H5.75V6.5"/>
+      </symbol>
+      <symbol id="icon-copy" viewBox="0 0 24 24">
+        <path d="M8.25 8.25h10v10h-10z"/>
+        <path d="M5.75 14.75v-9h9"/>
+      </symbol>
+      <symbol id="icon-maximize" viewBox="0 0 24 24">
+        <path d="M8.5 4.75H4.75V8.5"/>
+        <path d="M15.5 4.75h3.75V8.5"/>
+        <path d="M8.5 19.25H4.75V15.5"/>
+        <path d="M15.5 19.25h3.75V15.5"/>
+      </symbol>
+      <symbol id="icon-shield" viewBox="0 0 24 24">
+        <path d="M12 3.75 18.25 6v4.8c0 4.2-2.55 7.1-6.25 8.45-3.7-1.35-6.25-4.25-6.25-8.45V6L12 3.75Z"/>
+      </symbol>
+    </svg>
+
+    <main class="fleet-shell">
+      <section class="login-view" id="login-panel">
+        <div class="login-card">
+          <div class="brand-lockup">
+            <img class="brand-mark" src="/assets/vantacam-mark.png" alt="VantaCam">
+            <div>
+              <p class="brand-name">VantaCam</p>
+              <p class="kicker">Tailnet fleet console</p>
+            </div>
+          </div>
+          <h1>Private camera fleet</h1>
+          <p class="muted">Unlock every configured host on your tailnet from one quiet control surface.</p>
+
+          <form id="login-form" class="stack-form">
+            <label for="password">Dashboard password</label>
+            <input id="password" name="password" type="password" autocomplete="current-password" required>
+            <button class="btn btn-primary" type="submit">
+              <span>Unlock fleet</span>
+              <svg><use href="#icon-lock"></use></svg>
+            </button>
+            <p class="form-status" id="login-status"></p>
+          </form>
+        </div>
+      </section>
+
+      <section class="console-view is-hidden" id="console">
+        <header class="masthead">
+          <div class="brand-lockup">
+            <img class="brand-mark masthead-logo" src="/assets/vantacam-mark.png" alt="VantaCam">
+            <div>
+              <p class="kicker">VantaCam Fleet</p>
+              <h1>Camera grid</h1>
+            </div>
+          </div>
+          <div class="toolbar">
+            <button class="btn btn-quiet" id="refresh-all-button" type="button">
+              <svg><use href="#icon-refresh"></use></svg>
+              <span>Refresh</span>
+            </button>
+            <button class="btn btn-quiet" id="lock-button" type="button">
+              <svg><use href="#icon-lock"></use></svg>
+              <span>Lock</span>
+            </button>
+          </div>
+        </header>
+
+        <section class="overview-strip" aria-label="Fleet summary">
+          <article>
+            <span class="metric-label">Configured</span>
+            <strong id="metric-total">0</strong>
+          </article>
+          <article>
+            <span class="metric-label">Reachable</span>
+            <strong id="metric-reachable">0</strong>
+          </article>
+          <article>
+            <span class="metric-label">Live</span>
+            <strong id="metric-live">0</strong>
+          </article>
+          <article>
+            <span class="metric-label">Checked</span>
+            <strong id="metric-checked">--</strong>
+          </article>
+        </section>
+
+        <section class="camera-grid" id="camera-grid" aria-live="polite"></section>
+
+        <section class="security-strip">
+          <svg><use href="#icon-shield"></use></svg>
+          <span>Use private Tailscale Serve HTTPS camera URLs. Do not use Funnel for this dashboard.</span>
+        </section>
+      </section>
+    </main>
+
+    <dialog class="fullscreen-dialog" id="fullscreen-dialog">
+      <div class="dialog-bar">
+        <div>
+          <p class="kicker">Expanded stream</p>
+          <h2 id="fullscreen-title">Camera</h2>
+        </div>
+        <button class="btn btn-quiet" id="fullscreen-close" type="button">Close</button>
+      </div>
+      <iframe id="fullscreen-frame" title="Expanded camera stream" referrerpolicy="no-referrer"></iframe>
+    </dialog>
+
+    <template id="camera-card-template">
+      <article class="camera-card">
+        <header class="card-head">
+          <div>
+            <p class="kicker camera-kind"></p>
+            <h2 class="camera-name"></h2>
+          </div>
+          <span class="status-chip">
+            <span class="status-light"></span>
+            <span class="status-label">Checking</span>
+          </span>
+        </header>
+
+        <section class="viewer-shell">
+          <iframe class="stream-frame" title="Live camera stream" referrerpolicy="no-referrer"></iframe>
+          <div class="viewer-empty">
+            <svg><use href="#icon-power"></use></svg>
+            <p>Signal standing by</p>
+            <span>Turn this camera on to open its private WebRTC feed.</span>
+          </div>
+        </section>
+
+        <dl class="metrics">
+          <div>
+            <dt>Service</dt>
+            <dd class="metric-active">--</dd>
+          </div>
+          <div>
+            <dt>Boot</dt>
+            <dd class="metric-enabled">--</dd>
+          </div>
+          <div>
+            <dt>Path</dt>
+            <dd class="metric-path">--</dd>
+          </div>
+        </dl>
+
+        <form class="control-form">
+          <label>Control password</label>
+          <input class="control-password" type="password" autocomplete="off" required>
+          <div class="command-row">
+            <button class="btn btn-primary on-button" type="button">
+              <span>On</span>
+              <svg><use href="#icon-power"></use></svg>
+            </button>
+            <button class="btn btn-danger off-button" type="button">
+              <span>Off</span>
+              <svg><use href="#icon-power"></use></svg>
+            </button>
+            <button class="btn btn-quiet refresh-button" type="button" aria-label="Refresh camera">
+              <svg><use href="#icon-refresh"></use></svg>
+            </button>
+          </div>
+        </form>
+
+        <footer class="card-actions">
+          <a class="btn btn-quiet open-link" href="#" target="_blank" rel="noreferrer">
+            <span>Open</span>
+            <svg><use href="#icon-external"></use></svg>
+          </a>
+          <button class="btn btn-quiet copy-button" type="button">
+            <span>Copy</span>
+            <svg><use href="#icon-copy"></use></svg>
+          </button>
+          <button class="btn btn-quiet fullscreen-button" type="button">
+            <span>Fullscreen</span>
+            <svg><use href="#icon-maximize"></use></svg>
+          </button>
+        </footer>
+        <p class="form-status card-status"></p>
+      </article>
+    </template>
+
+    <script src="/api/config.js"></script>
+    <script src="/assets/app.js"></script>
+  </body>
+</html>

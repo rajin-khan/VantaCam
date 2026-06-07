@@ -9,7 +9,7 @@ if [[ -f "${CAMERA_ENV_FILE}" ]]; then
 fi
 
 STREAM_NAME="${STREAM_NAME:-cam}"
-VIDEO_DEVICE="${VIDEO_DEVICE:-/dev/video0}"
+VIDEO_DEVICE="${VIDEO_DEVICE:-auto}"
 REDACT="${REDACT:-yes}"
 
 section() {
@@ -36,6 +36,22 @@ run_optional() {
   fi
 }
 
+resolve_video_device() {
+  if [[ "${VIDEO_DEVICE}" != "auto" ]]; then
+    printf '%s\n' "${VIDEO_DEVICE}"
+    return
+  fi
+
+  local candidate
+  candidate="$(find /dev/v4l/by-id -maxdepth 1 -type l -name '*-video-index0' 2>/dev/null | sort | head -n 1 || true)"
+  if [[ -n "${candidate}" ]]; then
+    printf '%s\n' "${candidate}"
+    return
+  fi
+
+  find /dev/video* -maxdepth 0 -type c 2>/dev/null | sort -V | head -n 1 || true
+}
+
 section "Host"
 hostname 2>&1 | redact_output || true
 uname -a 2>&1 | redact_output || true
@@ -43,13 +59,20 @@ cat /etc/os-release 2>/dev/null | redact_output || true
 
 section "Camera Devices"
 ls -l /dev/video* 2>/dev/null || echo "No /dev/video* devices found"
+printf '\nStable camera paths by identity:\n'
+ls -l /dev/v4l/by-id/ 2>/dev/null || echo "No /dev/v4l/by-id paths found"
+printf '\nStable camera paths by USB port:\n'
+ls -l /dev/v4l/by-path/ 2>/dev/null || echo "No /dev/v4l/by-path paths found"
 run_optional v4l2-ctl --list-devices
 
 section "Camera Formats"
-if [[ -e "${VIDEO_DEVICE}" ]]; then
-  run_optional v4l2-ctl --device="${VIDEO_DEVICE}" --list-formats-ext
+RESOLVED_VIDEO_DEVICE="$(resolve_video_device)"
+echo "configured VIDEO_DEVICE: ${VIDEO_DEVICE}"
+echo "resolved video device: ${RESOLVED_VIDEO_DEVICE:-not found}"
+if [[ -n "${RESOLVED_VIDEO_DEVICE}" && -e "${RESOLVED_VIDEO_DEVICE}" ]]; then
+  run_optional v4l2-ctl --device="${RESOLVED_VIDEO_DEVICE}" --list-formats-ext
 else
-  echo "${VIDEO_DEVICE} does not exist"
+  echo "camera device does not exist"
 fi
 
 section "MediaMTX Binary"

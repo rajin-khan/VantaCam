@@ -9,7 +9,7 @@ if [[ -f "${CAMERA_ENV_FILE}" ]]; then
 fi
 
 STREAM_NAME="${STREAM_NAME:-cam}"
-VIDEO_DEVICE="${VIDEO_DEVICE:-/dev/video0}"
+VIDEO_DEVICE="${VIDEO_DEVICE:-auto}"
 VIDEO_SIZE="${VIDEO_SIZE:-1280x720}"
 FRAMERATE="${FRAMERATE:-30}"
 BITRATE="${BITRATE:-1200k}"
@@ -37,8 +37,8 @@ validate_ipv4() {
 validate_inputs() {
   [[ "${STREAM_NAME}" =~ ^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$ ]] ||
     die "STREAM_NAME must be 1-64 chars of letters, numbers, underscore, or dash, starting with a letter or number"
-  [[ "${VIDEO_DEVICE}" =~ ^/dev/video[0-9]+$ ]] ||
-    die "VIDEO_DEVICE must look like /dev/video0"
+  [[ "${VIDEO_DEVICE}" == "auto" || "${VIDEO_DEVICE}" =~ ^/dev/video[0-9]+$ || "${VIDEO_DEVICE}" =~ ^/dev/v4l/by-(id|path)/[A-Za-z0-9._:+,@=-]+$ ]] ||
+    die "VIDEO_DEVICE must be auto, /dev/video0, or a stable /dev/v4l/by-id/... path"
   [[ "${VIDEO_SIZE}" =~ ^[0-9]{2,5}x[0-9]{2,5}$ ]] ||
     die "VIDEO_SIZE must look like 1280x720"
   [[ "${FRAMERATE}" =~ ^[0-9]+$ ]] && (( FRAMERATE >= 1 && FRAMERATE <= 60 )) ||
@@ -58,6 +58,29 @@ validate_inputs() {
   fi
 }
 
+resolve_video_device() {
+  if [[ "${VIDEO_DEVICE}" != "auto" ]]; then
+    [[ -e "${VIDEO_DEVICE}" ]] || die "VIDEO_DEVICE does not exist: ${VIDEO_DEVICE}"
+    return
+  fi
+
+  local candidate
+  candidate="$(find /dev/v4l/by-id -maxdepth 1 -type l -name '*-video-index0' 2>/dev/null | sort | head -n 1 || true)"
+  if [[ -n "${candidate}" ]]; then
+    VIDEO_DEVICE="${candidate}"
+    return
+  fi
+
+  candidate="$(find /dev/video* -maxdepth 0 -type c 2>/dev/null | sort -V | head -n 1 || true)"
+  if [[ -n "${candidate}" ]]; then
+    VIDEO_DEVICE="${candidate}"
+    echo "warning: using ${VIDEO_DEVICE}; prefer a stable /dev/v4l/by-id/... camera path when available" >&2
+    return
+  fi
+
+  die "no camera device found; plug in the USB camera and rerun"
+}
+
 if [[ "$(uname -s)" != "Linux" ]]; then
   echo "This installer is meant to run on Raspberry Pi OS or another Linux host." >&2
   exit 1
@@ -69,6 +92,7 @@ if [[ "${EUID}" -ne 0 ]]; then
 fi
 
 validate_inputs
+resolve_video_device
 
 case "$(uname -m)" in
   aarch64|arm64)
@@ -190,6 +214,7 @@ systemctl enable --now mediamtx
 
 echo
 echo "MediaMTX is installed and running."
+echo "Camera device: ${VIDEO_DEVICE}"
 if [[ "${WEBRTC_HTTP_BIND_IP}" == "127.0.0.1" ]]; then
   echo "WebRTC page URL: http://127.0.0.1:8889/${STREAM_NAME}/ (intended for Tailscale Serve)"
 else
