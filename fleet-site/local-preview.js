@@ -127,6 +127,7 @@ function proxyCamera(req, res) {
       rejectUnauthorized: false,
       headers: {
         ...(req.headers['content-type'] ? { 'Content-Type': req.headers['content-type'] } : {}),
+        ...(req.headers.authorization ? { Authorization: req.headers.authorization } : {}),
         ...(body.length ? { 'Content-Length': body.length } : {}),
         ...(req.headers.cookie ? { Cookie: req.headers.cookie } : {}),
       },

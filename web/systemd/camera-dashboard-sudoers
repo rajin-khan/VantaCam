@@ -1,1 +1,1 @@
-camerauser ALL=(root) NOPASSWD: /bin/systemctl enable --now mediamtx, /bin/systemctl disable --now mediamtx, /usr/bin/systemctl enable --now mediamtx, /usr/bin/systemctl disable --now mediamtx
+camerauser ALL=(root) NOPASSWD: /bin/systemctl enable --now mediamtx, /bin/systemctl disable --now mediamtx, /bin/systemctl start vantacam-rewind, /bin/systemctl stop vantacam-rewind, /usr/bin/systemctl enable --now mediamtx, /usr/bin/systemctl disable --now mediamtx, /usr/bin/systemctl start vantacam-rewind, /usr/bin/systemctl stop vantacam-rewind

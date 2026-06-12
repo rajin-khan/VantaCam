@@ -44,6 +44,11 @@
       <symbol id="icon-shield" viewBox="0 0 24 24">
         <path d="M12 3.75 18.25 6v4.8c0 4.2-2.55 7.1-6.25 8.45-3.7-1.35-6.25-4.25-6.25-8.45V6L12 3.75Z"/>
       </symbol>
+      <symbol id="icon-replay" viewBox="0 0 24 24">
+        <path d="M7.25 6.25v4.5h4.5"/>
+        <path d="M7.6 10.4a5.9 5.9 0 1 1 1.45 5.9"/>
+        <path d="M11 9.25v5.5l4.25-2.75z"/>
+      </symbol>
     </svg>
 
     <main class="fleet-shell">
@@ -129,6 +134,7 @@
         <button class="btn btn-quiet" id="fullscreen-close" type="button">Close</button>
       </div>
       <iframe id="fullscreen-frame" title="Expanded camera stream" referrerpolicy="no-referrer"></iframe>
+      <video id="fullscreen-video" class="is-hidden" title="Rewind playback" controls playsinline></video>
     </dialog>
 
     <template id="camera-card-template">
@@ -191,6 +197,10 @@
             <span>Open</span>
             <svg><use href="#icon-external"></use></svg>
           </a>
+          <button class="btn btn-quiet replay-button" type="button">
+            <span>Replay</span>
+            <svg><use href="#icon-replay"></use></svg>
+          </button>
           <button class="btn btn-quiet copy-button" type="button">
             <span>Copy</span>
             <svg><use href="#icon-copy"></use></svg>
@@ -205,6 +215,7 @@
     </template>
 
     <script src="/api/config.js"></script>
+    <script src="/vendor/hls.min.js"></script>
     <script src="/assets/app.js"></script>
   </body>
 </html>

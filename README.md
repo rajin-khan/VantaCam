@@ -589,6 +589,69 @@ https://macbook.your-tailnet.ts.net:9444
 For fleet config, use port `9443` as the Mac `apiBase` and port `9444` for the
 Mac `streamUrl`.
 
+## Rewind Buffer
+
+VantaCam can keep a bounded rewind buffer for each camera host. This is not a
+recording archive. It is a short rolling HLS buffer for the current or most
+recent camera session.
+
+Behavior:
+
+```text
+Turn On
+  -> delete the previous rewind buffer
+  -> start a fresh rolling buffer
+
+While On
+  -> keep only the latest configured minutes
+  -> old segments are deleted as new ones arrive
+
+Turn Off
+  -> stop the recorder
+  -> keep the final buffer viewable as the last session
+
+Next Turn On
+  -> replace that last session immediately
+```
+
+The recorder is separate from the live camera publisher. It reads the existing
+MediaMTX RTSP stream and writes small HLS segments. That keeps the working live
+camera path isolated.
+
+Recommended Pi settings:
+
+```text
+REWIND_ENABLED=true
+REWIND_MINUTES=30
+REWIND_SEGMENT_SECONDS=6
+REWIND_MAX_MB=512
+REWIND_DIR=/run/vantacam-rewind
+REWIND_SOURCE_URL=rtsp://127.0.0.1:8554/YOUR_STREAM_PATH
+```
+
+Why `/run`: it is RAM-backed on Linux, so the Pi SD card is not constantly
+written while the stream is on. With the current `1200k` stream bitrate,
+30 minutes is roughly 300-350 MB including overhead, so a 512 MB storage budget
+is a good starting point. The actual bound comes from `REWIND_MINUTES` and the
+camera bitrate.
+
+Recommended Mac settings:
+
+```text
+REWIND_ENABLED=true
+REWIND_MINUTES=30
+REWIND_SEGMENT_SECONDS=6
+REWIND_MAX_MB=512
+REWIND_DIR=/Users/YOU/Library/Application Support/VantaCam/rewind
+REWIND_SOURCE_URL=rtsp://127.0.0.1:8554/YOUR_STREAM_PATH
+```
+
+The fleet dashboard shows a `Replay` action when a buffer exists. Playback uses
+short-lived signed URLs, so the video element does not depend on third-party
+cookies from the camera host domain. The fleet site also includes a pinned local
+copy of hls.js so desktop Chromium browsers can play the replay buffer without a
+runtime CDN dependency.
+
 ## Fleet Dashboard Deployment
 
 Use this when you want one Vercel page that shows multiple cameras, such as the
@@ -667,6 +730,7 @@ Security boundaries:
 - Dashboard login controls who can open the web console.
 - Stream control password controls who can start or stop MediaMTX.
 - MediaMTX is disabled when the stream is off.
+- Rewind playback URLs are short-lived and only generated after dashboard auth.
 - Private values stay out of Git.
 
 Things this repo intentionally avoids:

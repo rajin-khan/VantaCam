@@ -24,6 +24,23 @@ The browser then talks directly to each camera host API. Because the Vercel page
 is HTTPS, each camera API should also be HTTPS through private Tailscale Serve
 or the Mac Tailscale certificate proxy fallback. Do not use Tailscale Funnel.
 
+If a camera host has rewind enabled, `/api/status` includes a `rewind` object.
+The dashboard uses that to show the `Replay` action for the current or most
+recent bounded buffer.
+
+Replay playback is HLS. Safari and iPhone browsers can usually play HLS
+natively. Chrome, Arc, and many Chromium desktop browsers need MediaSource
+support through hls.js, so this folder vendors a pinned local copy:
+
+```text
+vendor/hls.min.js
+vendor/hls.LICENSE.txt
+```
+
+The dashboard loads that local file before `assets/app.js`. Do not replace it
+with a CDN script; keeping it local avoids a runtime third-party dependency on a
+private camera dashboard.
+
 ## Camera Config
 
 Use `cameras.example.json` as the shape:

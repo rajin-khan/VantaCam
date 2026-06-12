@@ -38,6 +38,14 @@ PORT = int(os.environ.get("PORT", "3200"))
 STREAM_NAME = os.environ.get("STREAM_NAME", "mac-cam")
 PUBLIC_WEBRTC_URL = os.environ.get("PUBLIC_WEBRTC_URL", "")
 PUBLIC_STREAM_HOST = os.environ.get("PUBLIC_STREAM_HOST", HOST)
+REWIND_ENABLED = os.environ.get("REWIND_ENABLED", "false").lower() in ("1", "true", "yes", "on")
+REWIND_DIR = pathlib.Path(os.environ.get(
+    "REWIND_DIR",
+    str(pathlib.Path.home() / "Library/Application Support/VantaCam/rewind"),
+))
+REWIND_MINUTES = int(os.environ.get("REWIND_MINUTES", "30"))
+REWIND_MAX_MB = int(os.environ.get("REWIND_MAX_MB", "512"))
+REWIND_TOKEN_SECONDS = int(os.environ.get("REWIND_TOKEN_SECONDS", "900"))
 APP_PASSWORD_SHA256 = os.environ.get("APP_PASSWORD_SHA256", "")
 CONTROL_PASSWORD_SHA256 = os.environ.get("CONTROL_PASSWORD_SHA256", "")
 SESSION_SECRET = os.environ.get("SESSION_SECRET", "")
@@ -58,6 +66,11 @@ CAMERA_LABEL = os.environ.get("CAMERA_LABEL", "com.vantacam.camera")
 CAMERA_PLIST = pathlib.Path(os.environ.get(
     "CAMERA_PLIST",
     str(pathlib.Path.home() / "Library/LaunchAgents/com.vantacam.camera.plist"),
+))
+REWIND_LABEL = os.environ.get("REWIND_LABEL", "com.vantacam.rewind")
+REWIND_PLIST = pathlib.Path(os.environ.get(
+    "REWIND_PLIST",
+    str(pathlib.Path.home() / "Library/LaunchAgents/com.vantacam.rewind.plist"),
 ))
 PUBLIC_DIR = pathlib.Path(os.environ.get("PUBLIC_DIR", str(PROJECT_DIR / "web/public")))
 SESSION_MAX_AGE_SECONDS = 60 * 60 * 12
@@ -169,14 +182,21 @@ def stop_service(label):
 
 
 def service_on():
+    if REWIND_ENABLED:
+        stop_service(REWIND_LABEL)
+        clear_rewind_buffer()
     cleanup_camera_processes()
     start_service(MEDIA_LABEL, MEDIA_PLIST)
     time.sleep(1)
     start_service(CAMERA_LABEL, CAMERA_PLIST)
     wait_for_path_ready(START_READY_TIMEOUT_SECONDS)
+    if REWIND_ENABLED:
+        start_service(REWIND_LABEL, REWIND_PLIST)
 
 
 def service_off():
+    if REWIND_ENABLED:
+        stop_service(REWIND_LABEL)
     stop_service(CAMERA_LABEL)
     cleanup_camera_processes()
     stop_service(MEDIA_LABEL)
@@ -209,8 +229,97 @@ def status_payload():
         "hlsUrl": "",
         "rawHlsUrl": "",
         "ports": "",
+        "rewind": rewind_status(),
         "checkedAt": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
     }
+
+
+def rewind_status():
+    active = service_active_text(REWIND_LABEL, REWIND_PLIST) if REWIND_ENABLED else "disabled"
+    stats = read_rewind_stats()
+    token = make_rewind_token() if stats["available"] else ""
+    return {
+        "enabled": REWIND_ENABLED,
+        "active": active,
+        "available": stats["available"],
+        "durationSeconds": stats["durationSeconds"],
+        "segmentCount": stats["segmentCount"],
+        "sizeBytes": stats["sizeBytes"],
+        "maxMinutes": REWIND_MINUTES,
+        "maxMb": REWIND_MAX_MB,
+        "playlistPath": f"/rewind/index.m3u8?token={urllib.parse.quote(token)}" if token else "",
+        "checkedAt": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+    }
+
+
+def read_rewind_stats():
+    stats = {
+        "available": False,
+        "durationSeconds": 0,
+        "segmentCount": 0,
+        "sizeBytes": 0,
+    }
+    playlist_path = REWIND_DIR / "index.m3u8"
+    try:
+        playlist = playlist_path.read_text()
+    except OSError:
+        return stats
+
+    segment_names = []
+    for line in playlist.splitlines():
+        stripped = line.strip()
+        if stripped.startswith("#EXTINF:"):
+            try:
+                stats["durationSeconds"] += float(stripped.removeprefix("#EXTINF:").rstrip(","))
+            except ValueError:
+                pass
+        elif stripped and not stripped.startswith("#") and is_safe_rewind_name(stripped):
+            segment_names.append(stripped)
+
+    stats["segmentCount"] = len(segment_names)
+    for name in set(["index.m3u8", *segment_names]):
+        try:
+            stats["sizeBytes"] += (REWIND_DIR / name).stat().st_size
+        except OSError:
+            pass
+    stats["available"] = bool(segment_names)
+    return stats
+
+
+def clear_rewind_buffer():
+    REWIND_DIR.mkdir(parents=True, exist_ok=True)
+    for item in REWIND_DIR.iterdir():
+        if item.is_file() and is_safe_rewind_name(item.name):
+            item.unlink(missing_ok=True)
+
+
+def is_safe_rewind_name(value):
+    if value == "index.m3u8":
+        return True
+    return value.startswith("segment_") and value.endswith(".ts") and value[8:13].isdigit() and len(value) == len("segment_00000.ts")
+
+
+def make_rewind_token():
+    payload = base64.urlsafe_b64encode(json.dumps({
+        "exp": int(time.time()) + REWIND_TOKEN_SECONDS,
+        "scope": "rewind",
+    }).encode()).decode().rstrip("=")
+    return f"{payload}.{sign(payload)}"
+
+
+def verify_rewind_token(token):
+    parts = str(token or "").split(".")
+    if len(parts) != 2:
+        return False
+    payload, signature = parts
+    if not hmac.compare_digest(sign(payload), signature):
+        return False
+    try:
+        padded = payload + ("=" * (-len(payload) % 4))
+        decoded = json.loads(base64.urlsafe_b64decode(padded.encode()).decode())
+    except Exception:
+        return False
+    return decoded.get("scope") == "rewind" and int(decoded.get("exp", 0)) >= int(time.time())
 
 
 def mediamtx_path_ready():
@@ -257,6 +366,14 @@ class Handler(http.server.BaseHTTPRequestHandler):
         if path == "/api/status":
             if self.require_session():
                 self.send_json(200, status_payload())
+            return
+        if path == "/api/rewind/status":
+            if self.require_session():
+                self.send_json(200, rewind_status())
+            return
+        if path.startswith("/rewind/"):
+            if self.require_rewind_access():
+                self.serve_rewind(path.removeprefix("/rewind/"))
             return
         if path == "/" or path == "/index.html":
             self.serve_file(PUBLIC_DIR / "index.html")
@@ -350,6 +467,13 @@ class Handler(http.server.BaseHTTPRequestHandler):
         self.send_json(401, {"error": "unauthorized"})
         return False
 
+    def require_rewind_access(self):
+        query = urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query)
+        token = (query.get("token") or [""])[0]
+        if verify_rewind_token(token):
+            return True
+        return self.require_session()
+
     def serve_file(self, file_path):
         safe_path = file_path.resolve()
         if not str(safe_path).startswith(str(PUBLIC_DIR.resolve())) or not safe_path.exists():
@@ -362,6 +486,36 @@ class Handler(http.server.BaseHTTPRequestHandler):
         self.send_header("Cache-Control", "no-store" if safe_path.name == "index.html" else "public, max-age=3600")
         self.end_headers()
         self.wfile.write(safe_path.read_bytes())
+
+    def serve_rewind(self, file_name):
+        file_name = urllib.parse.unquote(file_name)
+        if not is_safe_rewind_name(file_name):
+            self.send_text(400, "Invalid rewind path")
+            return
+        file_path = (REWIND_DIR / file_name).resolve()
+        if not str(file_path).startswith(str(REWIND_DIR.resolve())) or not file_path.exists():
+            self.send_text(404, "Not found")
+            return
+
+        if file_name == "index.m3u8":
+            query = urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query)
+            token = (query.get("token") or [make_rewind_token()])[0]
+            lines = []
+            for line in file_path.read_text().splitlines():
+                stripped = line.strip()
+                if stripped and not stripped.startswith("#") and is_safe_rewind_name(stripped):
+                    lines.append(f"{stripped}?token={urllib.parse.quote(token)}")
+                else:
+                    lines.append(line)
+            self.send_text(200, "\n".join(lines), "application/vnd.apple.mpegurl")
+            return
+
+        self.send_response(200)
+        self.send_header("Content-Type", "video/mp2t")
+        self.send_common_headers()
+        self.send_header("Cache-Control", "no-store")
+        self.end_headers()
+        self.wfile.write(file_path.read_bytes())
 
     def send_json(self, status, payload):
         self.send_response(status)

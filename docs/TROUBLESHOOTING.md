@@ -180,6 +180,58 @@ The helper script also handles this automatically:
 sudo ./pi/enable-tailscale-serve.sh
 ```
 
+## Replay Buffer Missing
+
+Symptom:
+
+```text
+The camera works, but the Replay button says no last-session buffer is available.
+```
+
+Check whether rewind is enabled in the host environment:
+
+```text
+REWIND_ENABLED=true
+REWIND_MINUTES=30
+REWIND_DIR=/run/vantacam-rewind
+```
+
+On the Pi, check the recorder service:
+
+```bash
+sudo systemctl status vantacam-rewind --no-pager
+ls -lh /run/vantacam-rewind/
+```
+
+Expected while the stream is on:
+
+```text
+index.m3u8
+segment_00000.ts
+segment_00001.ts
+...
+```
+
+Expected after turning the stream off:
+
+```text
+vantacam-rewind is stopped
+index.m3u8 and recent segment files remain
+```
+
+If the service is failing, inspect the log:
+
+```bash
+sudo journalctl -u vantacam-rewind -n 120 --no-pager
+```
+
+Common causes:
+
+- `REWIND_SOURCE_URL` points at the wrong stream path.
+- MediaMTX is not active yet when the recorder starts.
+- `REWIND_DIR` is not writable by the recorder service user.
+- The browser does not support HLS playback in a plain video element.
+
 ## Dashboard Does Not Load
 
 Check the dashboard service:

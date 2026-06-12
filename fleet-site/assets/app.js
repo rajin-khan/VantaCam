@@ -8,6 +8,7 @@ const refreshAllButton = document.querySelector('#refresh-all-button');
 const lockButton = document.querySelector('#lock-button');
 const fullscreenDialog = document.querySelector('#fullscreen-dialog');
 const fullscreenFrame = document.querySelector('#fullscreen-frame');
+const fullscreenVideo = document.querySelector('#fullscreen-video');
 const fullscreenTitle = document.querySelector('#fullscreen-title');
 const fullscreenClose = document.querySelector('#fullscreen-close');
 const totalMetric = document.querySelector('#metric-total');
@@ -20,6 +21,7 @@ const cameras = normalizeCameras(config.cameras || []);
 const state = new Map();
 
 let refreshTimer = null;
+let activeHls = null;
 
 boot();
 
@@ -53,12 +55,16 @@ lockButton.addEventListener('click', async () => {
   await Promise.all(cameras.map(camera => cameraApi(camera, '/api/logout', { method: 'POST' })));
   state.clear();
   cameraGrid.innerHTML = '';
+  resetReplayPlayer();
   fullscreenFrame.removeAttribute('src');
   showLogin();
 });
 
 fullscreenClose.addEventListener('click', closeFullscreen);
-fullscreenDialog.addEventListener('close', () => fullscreenFrame.removeAttribute('src'));
+fullscreenDialog.addEventListener('close', () => {
+  fullscreenFrame.removeAttribute('src');
+  resetReplayPlayer();
+});
 
 function boot() {
   totalMetric.textContent = String(cameras.length);
@@ -100,6 +106,7 @@ function renderCards() {
     card.querySelector('.off-button').addEventListener('click', () => controlCamera(camera, 'off'));
     card.querySelector('.copy-button').addEventListener('click', () => copyStreamUrl(camera));
     card.querySelector('.fullscreen-button').addEventListener('click', () => openFullscreen(camera));
+    card.querySelector('.replay-button').addEventListener('click', () => openReplay(camera));
     cameraGrid.append(card);
   }
 }
@@ -216,6 +223,9 @@ function renderCamera(camera) {
 
   if (cameraState.lastError) {
     card.querySelector('.card-status').textContent = readableError(cameraState.lastError);
+  } else {
+    const rewindText = rewindSummary(status.rewind);
+    if (rewindText) card.querySelector('.card-status').textContent = rewindText;
   }
 }
 
@@ -248,6 +258,9 @@ function openFullscreen(camera) {
   }
 
   fullscreenTitle.textContent = camera.name;
+  resetReplayPlayer();
+  fullscreenVideo.classList.add('is-hidden');
+  fullscreenFrame.classList.remove('is-hidden');
   fullscreenFrame.src = streamUrl;
   fullscreenDialog.showModal();
   if (fullscreenDialog.requestFullscreen) {
@@ -255,11 +268,71 @@ function openFullscreen(camera) {
   }
 }
 
+function openReplay(camera) {
+  const cameraState = state.get(camera.id) || {};
+  const rewind = cameraState.status?.rewind || {};
+  const card = getCard(camera);
+  if (!rewind.available || !rewind.playlistPath) {
+    card.querySelector('.card-status').textContent = 'No last-session buffer is available yet.';
+    return;
+  }
+
+  const replayUrl = `${camera.apiBase}${rewind.playlistPath}`;
+  fullscreenTitle.textContent = `${camera.name} replay`;
+  fullscreenFrame.removeAttribute('src');
+  fullscreenFrame.classList.add('is-hidden');
+  fullscreenVideo.classList.remove('is-hidden');
+  loadReplayVideo(replayUrl, card);
+  fullscreenDialog.showModal();
+}
+
 function closeFullscreen() {
   if (document.fullscreenElement) {
     document.exitFullscreen().catch(() => {});
   }
+  resetReplayPlayer();
   fullscreenDialog.close();
+}
+
+function loadReplayVideo(replayUrl, card) {
+  resetReplayPlayer();
+
+  if (fullscreenVideo.canPlayType('application/vnd.apple.mpegurl')) {
+    fullscreenVideo.src = replayUrl;
+    fullscreenVideo.play().catch(() => {});
+    return;
+  }
+
+  if (window.Hls?.isSupported()) {
+    activeHls = new window.Hls({
+      enableWorker: true,
+      lowLatencyMode: false,
+      backBufferLength: 30,
+    });
+    activeHls.on(window.Hls.Events.ERROR, (event, data) => {
+      if (!data?.fatal) return;
+      card.querySelector('.card-status').textContent = 'Replay player failed to load this buffer.';
+      resetReplayPlayer();
+    });
+    activeHls.loadSource(replayUrl);
+    activeHls.attachMedia(fullscreenVideo);
+    activeHls.on(window.Hls.Events.MANIFEST_PARSED, () => {
+      fullscreenVideo.play().catch(() => {});
+    });
+    return;
+  }
+
+  card.querySelector('.card-status').textContent = 'This browser cannot play HLS replay.';
+}
+
+function resetReplayPlayer() {
+  if (activeHls) {
+    activeHls.destroy();
+    activeHls = null;
+  }
+  fullscreenVideo.pause();
+  fullscreenVideo.removeAttribute('src');
+  fullscreenVideo.load();
 }
 
 async function cameraApi(camera, path, options = {}) {
@@ -306,6 +379,28 @@ function readableError(error) {
   if (error === 'backend_unreachable') return 'Backend unreachable from this browser.';
   if (error === 'invalid_control_password') return 'Control password did not match.';
   return 'Request failed. Refresh and try again.';
+}
+
+function rewindSummary(rewind) {
+  if (!rewind?.enabled) return '';
+  if (rewind.available) {
+    return `Replay buffer: ${formatDuration(rewind.durationSeconds)} / ${rewind.maxMinutes} min, ${formatBytes(rewind.sizeBytes)}.`;
+  }
+  if (rewind.active === 'active') return 'Replay buffer is warming up.';
+  return 'No replay buffer yet.';
+}
+
+function formatDuration(seconds) {
+  const total = Math.max(0, Math.round(Number(seconds) || 0));
+  const minutes = Math.floor(total / 60);
+  const rest = total % 60;
+  return `${minutes}:${String(rest).padStart(2, '0')}`;
+}
+
+function formatBytes(bytes) {
+  const value = Number(bytes) || 0;
+  if (value < 1024 * 1024) return `${Math.round(value / 1024)} KB`;
+  return `${(value / 1024 / 1024).toFixed(1)} MB`;
 }
 
 function controlErrorText(error) {

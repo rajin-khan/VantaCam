@@ -131,12 +131,44 @@ The API waits briefly for MediaMTX to report the stream path as ready before the
 `Turn On` command returns. The default wait is 20 seconds; change it with
 `--start-ready-timeout` if an older Mac needs longer.
 
+## Rewind Buffer
+
+The Mac host can keep a bounded last-session replay buffer. It is separate from
+the live camera publisher and reads the local MediaMTX RTSP stream:
+
+```text
+rtsp://127.0.0.1:8554/YOUR_STREAM_PATH
+```
+
+Recommended settings in `mac/.env`:
+
+```text
+REWIND_ENABLED=true
+REWIND_MINUTES=30
+REWIND_SEGMENT_SECONDS=6
+REWIND_MAX_MB=512
+REWIND_DIR=/Users/YOU/Library/Application Support/VantaCam/rewind
+REWIND_SOURCE_URL=rtsp://127.0.0.1:8554/YOUR_STREAM_PATH
+```
+
+The dashboard starts the `com.vantacam.rewind` LaunchAgent when the camera turns
+on and stops it when the camera turns off. The final buffer remains viewable as
+the last session until the next turn-on replaces it.
+
+Check it with:
+
+```bash
+launchctl print "gui/$(id -u)/com.vantacam.rewind"
+ls -lh "$HOME/Library/Application Support/VantaCam/rewind"
+```
+
 ## Service Commands
 
 ```bash
 launchctl print "gui/$(id -u)/com.vantacam.host"
 launchctl print "gui/$(id -u)/com.vantacam.mediamtx"
 launchctl print "gui/$(id -u)/com.vantacam.camera"
+launchctl print "gui/$(id -u)/com.vantacam.rewind"
 ```
 
 Restart the dashboard API:
@@ -152,6 +184,8 @@ Force the stream off:
 ```bash
 launchctl disable "gui/$(id -u)/com.vantacam.camera"
 launchctl bootout "gui/$(id -u)/com.vantacam.camera" 2>/dev/null || true
+launchctl disable "gui/$(id -u)/com.vantacam.rewind"
+launchctl bootout "gui/$(id -u)/com.vantacam.rewind" 2>/dev/null || true
 launchctl disable "gui/$(id -u)/com.vantacam.mediamtx"
 launchctl bootout "gui/$(id -u)/com.vantacam.mediamtx" 2>/dev/null || true
 ```

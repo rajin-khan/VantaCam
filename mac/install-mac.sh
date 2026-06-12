@@ -28,6 +28,12 @@ CORS_ORIGIN="${CORS_ORIGIN:-}"
 COOKIE_SECURE="${COOKIE_SECURE:-false}"
 COOKIE_SAMESITE="${COOKIE_SAMESITE:-Lax}"
 START_READY_TIMEOUT_SECONDS="${START_READY_TIMEOUT_SECONDS:-20}"
+REWIND_ENABLED="${REWIND_ENABLED:-true}"
+REWIND_MINUTES="${REWIND_MINUTES:-30}"
+REWIND_SEGMENT_SECONDS="${REWIND_SEGMENT_SECONDS:-6}"
+REWIND_MAX_MB="${REWIND_MAX_MB:-512}"
+REWIND_DIR="${REWIND_DIR:-${APP_DIR}/rewind}"
+REWIND_TOKEN_SECONDS="${REWIND_TOKEN_SECONDS:-900}"
 TAILSCALE_BIN="${TAILSCALE_BIN:-/Applications/Tailscale.app/Contents/MacOS/Tailscale}"
 START_SERVICES="yes"
 SELECTED_CAMERA_INPUT=""
@@ -60,6 +66,9 @@ Options:
   --start-ready-timeout SEC   Wait this long for WebRTC path readiness. Default: ${START_READY_TIMEOUT_SECONDS}
   --app-password PASSWORD     Dashboard login password. Generated when omitted.
   --control-password PASSWORD Stream on/off password. Generated when omitted.
+  --rewind-enabled BOOL       Enable bounded rewind buffer. Default: ${REWIND_ENABLED}
+  --rewind-minutes MINUTES    Rolling buffer duration. Default: ${REWIND_MINUTES}
+  --rewind-max-mb MB          Intended storage cap. Default: ${REWIND_MAX_MB}
   --no-start                  Install files but do not start dashboard.
   -h, --help                  Show this help.
 EOF
@@ -87,6 +96,9 @@ while [[ $# -gt 0 ]]; do
     --start-ready-timeout) START_READY_TIMEOUT_SECONDS="$2"; shift 2 ;;
     --app-password) APP_PASSWORD="$2"; shift 2 ;;
     --control-password) CONTROL_PASSWORD="$2"; shift 2 ;;
+    --rewind-enabled) REWIND_ENABLED="$2"; shift 2 ;;
+    --rewind-minutes) REWIND_MINUTES="$2"; shift 2 ;;
+    --rewind-max-mb) REWIND_MAX_MB="$2"; shift 2 ;;
     --no-start) START_SERVICES="no"; shift ;;
     -h|--help) usage; exit 0 ;;
     *) usage; exit 1 ;;
@@ -401,10 +413,19 @@ SESSION_SECRET=${session_secret}
 COOKIE_SECURE=${COOKIE_SECURE}
 COOKIE_SAMESITE=${COOKIE_SAMESITE}
 START_READY_TIMEOUT_SECONDS=${START_READY_TIMEOUT_SECONDS}
+REWIND_ENABLED=${REWIND_ENABLED}
+REWIND_MINUTES=${REWIND_MINUTES}
+REWIND_SEGMENT_SECONDS=${REWIND_SEGMENT_SECONDS}
+REWIND_MAX_MB=${REWIND_MAX_MB}
+REWIND_DIR=${REWIND_DIR}
+REWIND_SOURCE_URL=rtsp://127.0.0.1:8554/${STREAM_NAME}
+REWIND_TOKEN_SECONDS=${REWIND_TOKEN_SECONDS}
 MEDIAMTX_LABEL=com.vantacam.mediamtx
 MEDIAMTX_PLIST=${LAUNCH_AGENTS_DIR}/com.vantacam.mediamtx.plist
 CAMERA_LABEL=com.vantacam.camera
 CAMERA_PLIST=${LAUNCH_AGENTS_DIR}/com.vantacam.camera.plist
+REWIND_LABEL=com.vantacam.rewind
+REWIND_PLIST=${LAUNCH_AGENTS_DIR}/com.vantacam.rewind.plist
 PUBLIC_DIR=${PROJECT_DIR}/web/public
 EOF
 }
@@ -483,6 +504,31 @@ EOF
 </dict>
 </plist>
 EOF
+
+  chmod +x "${PROJECT_DIR}/mac/rewind-recorder.sh"
+  cat >"${LAUNCH_AGENTS_DIR}/com.vantacam.rewind.plist" <<EOF
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>com.vantacam.rewind</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>${PROJECT_DIR}/mac/rewind-recorder.sh</string>
+    <string>run</string>
+  </array>
+  <key>RunAtLoad</key>
+  <false/>
+  <key>KeepAlive</key>
+  <true/>
+  <key>StandardOutPath</key>
+  <string>${LOG_DIR}/rewind.out.log</string>
+  <key>StandardErrorPath</key>
+  <string>${LOG_DIR}/rewind.err.log</string>
+</dict>
+</plist>
+EOF
 }
 
 reload_host() {
@@ -494,6 +540,8 @@ reload_host() {
   launchctl bootout "${domain}/com.vantacam.camera" >/dev/null 2>&1 || true
   pkill -f "${RUN_BIN_DIR}/run-camera" >/dev/null 2>&1 || true
   pkill -f "${RUN_BIN_DIR}/ffmpeg" >/dev/null 2>&1 || true
+  launchctl disable "${domain}/com.vantacam.rewind" >/dev/null 2>&1 || true
+  launchctl bootout "${domain}/com.vantacam.rewind" >/dev/null 2>&1 || true
   launchctl disable "${domain}/com.vantacam.mediamtx" >/dev/null 2>&1 || true
   launchctl bootout "${domain}/com.vantacam.mediamtx" >/dev/null 2>&1 || true
 }

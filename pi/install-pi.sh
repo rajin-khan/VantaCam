@@ -17,6 +17,9 @@ INPUT_FORMAT="${INPUT_FORMAT:-}"
 STREAM_BIND_IP="${STREAM_BIND_IP:-auto}"
 WEBRTC_HTTP_BIND_IP="${WEBRTC_HTTP_BIND_IP:-}"
 MEDIAMTX_VERSION="${MEDIAMTX_VERSION:-v1.19.0}"
+INSTALL_USER="${SUDO_USER:-camerauser}"
+INSTALL_GROUP="${INSTALL_GROUP:-${INSTALL_USER}}"
+PROJECT_DIR="$(cd "${SCRIPT_DIR}/.." && pwd)"
 
 die() {
   echo "error: $*" >&2
@@ -208,6 +211,32 @@ RestartSec=5
 [Install]
 WantedBy=multi-user.target
 EOF
+
+echo "Writing rewind buffer service..."
+cat >/etc/systemd/system/vantacam-rewind.service <<EOF
+[Unit]
+Description=VantaCam bounded rewind buffer
+After=mediamtx.service
+Requires=mediamtx.service
+
+[Service]
+User=${INSTALL_USER}
+Group=${INSTALL_GROUP}
+WorkingDirectory=${PROJECT_DIR}
+EnvironmentFile=${PROJECT_DIR}/camera.env
+ExecStartPre=+/usr/bin/install -d -o ${INSTALL_USER} -g ${INSTALL_GROUP} -m 0750 /run/vantacam-rewind
+ExecStartPre=+/usr/bin/find /run/vantacam-rewind -mindepth 1 -maxdepth 1 -type f -delete
+ExecStart=${PROJECT_DIR}/pi/rewind-recorder.sh run
+Restart=always
+RestartSec=3
+SuccessExitStatus=143 255
+PrivateTmp=yes
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
+chmod +x "${PROJECT_DIR}/pi/rewind-recorder.sh"
 
 systemctl daemon-reload
 systemctl enable --now mediamtx

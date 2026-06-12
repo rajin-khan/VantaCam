@@ -1,0 +1,20 @@
+[Unit]
+Description=VantaCam bounded rewind buffer
+After=mediamtx.service
+Requires=mediamtx.service
+
+[Service]
+User=camerauser
+Group=camerauser
+WorkingDirectory=/home/camerauser/camera-stream-pi
+EnvironmentFile=/home/camerauser/camera-stream-pi/camera.env
+ExecStartPre=+/usr/bin/install -d -o camerauser -g camerauser -m 0750 /run/vantacam-rewind
+ExecStartPre=+/usr/bin/find /run/vantacam-rewind -mindepth 1 -maxdepth 1 -type f -delete
+ExecStart=/home/camerauser/camera-stream-pi/pi/rewind-recorder.sh run
+Restart=always
+RestartSec=3
+SuccessExitStatus=143 255
+PrivateTmp=yes
+
+[Install]
+WantedBy=multi-user.target
